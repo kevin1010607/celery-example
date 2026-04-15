@@ -1,0 +1,75 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker-gpu0:
+    build: .
+    container_name: celery_worker_0
+    hostname: celery_worker_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      CELERY_BROKER_URL: amqp://admin:admin123@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: rpc://
+      NVIDIA_VISIBLE_DEVICES: "0"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --concurrency=4
+      --prefetch-multiplier=1
+      -O fair
+      -n worker0@%h
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  worker-gpu1:
+    build: .
+    container_name: celery_worker_1
+    hostname: celery_worker_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      CELERY_BROKER_URL: amqp://admin:admin123@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: rpc://
+      NVIDIA_VISIBLE_DEVICES: "1"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --concurrency=4
+      --prefetch-multiplier=1
+      -O fair
+      -n worker1@%h
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
+volumes:
+  rabbitmq_data:
